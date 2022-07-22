@@ -577,6 +577,7 @@ func (h *handlers) GetGrades(c echo.Context) error {
 	courseResults := make([]CourseResult, 0, len(registeredCourses))
 	myGPA := 0.0
 	myCredits := 0
+
 	for _, course := range registeredCourses {
 		// 講義一覧の取得
 		var classes []Class
@@ -1502,27 +1503,20 @@ func (h *handlers) GetAnnouncementDetail(c echo.Context) error {
 
 	announcementID := c.Param("announcementID")
 
-	tx, err := h.DB.Beginx()
-	if err != nil {
-		c.Logger().Error(err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	defer tx.Rollback()
-
 	var a Announcement
-	if err := tx.Get(&a, "SELECT * FROM announcements where id = ?", announcementID); err != nil && err != sql.ErrNoRows {
+	if err := h.DB.Get(&a, "SELECT * FROM announcements where id = ?", announcementID); err != nil && err != sql.ErrNoRows {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	} else if err == sql.ErrNoRows {
 		return c.String(http.StatusNotFound, "No such announcement.")
 	}
 	var ad AnnouncementDetail
-	if err = tx.Get(&ad, "SELECT NOT `unread_announcements`.`is_deleted` AS `unread` FROM `unread_announcements` WHERE `user_id` = ? and `announcement_id` = ?", userID, announcementID); err != nil && err != sql.ErrNoRows {
+	if err = h.DB.Get(&ad, "SELECT NOT `unread_announcements`.`is_deleted` AS `unread` FROM `unread_announcements` WHERE `user_id` = ? and `announcement_id` = ?", userID, announcementID); err != nil && err != sql.ErrNoRows {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
 	var course Course
-	if err := tx.Get(&course, "SELECT * FROM `courses` WHERE `id` = ?", a.CourseID); err != nil && err != sql.ErrNoRows {
+	if err := h.DB.Get(&course, "SELECT * FROM `courses` WHERE `id` = ?", a.CourseID); err != nil && err != sql.ErrNoRows {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	} else if err == sql.ErrNoRows {
@@ -1530,13 +1524,20 @@ func (h *handlers) GetAnnouncementDetail(c echo.Context) error {
 	}
 
 	var registrationCount int
-	if err := tx.Get(&registrationCount, "SELECT COUNT(*) FROM `registrations` WHERE `course_id` = ? AND `user_id` = ?", a.CourseID, userID); err != nil {
+	if err := h.DB.Get(&registrationCount, "SELECT COUNT(*) FROM `registrations` WHERE `course_id` = ? AND `user_id` = ?", a.CourseID, userID); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
 	if registrationCount == 0 {
 		return c.String(http.StatusNotFound, "No such announcement.")
 	}
+
+	tx, err := h.DB.Beginx()
+	if err != nil {
+		c.Logger().Error(err)
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	defer tx.Rollback()
 
 	if _, err := tx.Exec("UPDATE `unread_announcements` SET `is_deleted` = true WHERE `announcement_id` = ? AND `user_id` = ?", announcementID, userID); err != nil {
 		c.Logger().Error(err)
