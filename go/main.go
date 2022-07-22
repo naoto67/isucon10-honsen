@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
@@ -45,7 +46,9 @@ func main() {
 	e.Use(session.Middleware(sessions.NewCookieStore([]byte("trapnomura"))))
 
 	db, _ := GetDB(false)
-	db.SetMaxOpenConns(10)
+	db.SetMaxOpenConns(512)
+	db.SetMaxIdleConns(512)
+	db.SetConnMaxIdleTime(1 * time.Hour)
 
 	h := &handlers{
 		DB: db,
@@ -1507,14 +1510,20 @@ func (h *handlers) GetAnnouncementDetail(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var announcement AnnouncementDetail
-	query := "SELECT `announcements`.`id`, `courses`.`id` AS `course_id`, `courses`.`name` AS `course_name`, `announcements`.`title`, `announcements`.`message`, NOT `unread_announcements`.`is_deleted` AS `unread`" +
-		" FROM `announcements`" +
-		" JOIN `courses` ON `courses`.`id` = `announcements`.`course_id`" +
-		" JOIN `unread_announcements` ON `unread_announcements`.`announcement_id` = `announcements`.`id`" +
-		" WHERE `announcements`.`id` = ?" +
-		" AND `unread_announcements`.`user_id` = ?"
-	if err := tx.Get(&announcement, query, announcementID, userID); err != nil && err != sql.ErrNoRows {
+	var a Announcement
+	if err := tx.Get(&a, "SELECT * FROM announcements where id = ?", announcementID); err != nil && err != sql.ErrNoRows {
+		c.Logger().Error(err)
+		return c.NoContent(http.StatusInternalServerError)
+	} else if err == sql.ErrNoRows {
+		return c.String(http.StatusNotFound, "No such announcement.")
+	}
+	var ad AnnouncementDetail
+	if err = tx.Get(&ad, "SELECT NOT `unread_announcements`.`is_deleted` AS `unread` FROM `unread_announcements` WHERE `user_id` = ?", userID); err != nil && err != sql.ErrNoRows {
+		c.Logger().Error(err)
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	var course Course
+	if err := tx.Get(&course, "SELECT * FROM `courses` WHERE `id` = ?", a.CourseID); err != nil && err != sql.ErrNoRows {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	} else if err == sql.ErrNoRows {
@@ -1522,7 +1531,7 @@ func (h *handlers) GetAnnouncementDetail(c echo.Context) error {
 	}
 
 	var registrationCount int
-	if err := tx.Get(&registrationCount, "SELECT COUNT(*) FROM `registrations` WHERE `course_id` = ? AND `user_id` = ?", announcement.CourseID, userID); err != nil {
+	if err := tx.Get(&registrationCount, "SELECT COUNT(*) FROM `registrations` WHERE `course_id` = ? AND `user_id` = ?", a.CourseID, userID); err != nil {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
@@ -1540,5 +1549,12 @@ func (h *handlers) GetAnnouncementDetail(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	return c.JSON(http.StatusOK, announcement)
+	return c.JSON(http.StatusOK, AnnouncementDetail{
+		ID:         a.ID,
+		CourseID:   a.ID,
+		CourseName: course.Name,
+		Title:      a.Title,
+		Message:    a.Message,
+		Unread:     ad.Unread,
+	})
 }
