@@ -1518,7 +1518,7 @@ func (h *handlers) GetAnnouncementDetail(c echo.Context) error {
 		return c.String(http.StatusNotFound, "No such announcement.")
 	}
 	var ad AnnouncementDetail
-	if err = tx.Get(&ad, "SELECT NOT `unread_announcements`.`is_deleted` AS `unread` FROM `unread_announcements` WHERE `user_id` = ?", userID); err != nil && err != sql.ErrNoRows {
+	if err = tx.Get(&ad, "SELECT NOT `unread_announcements`.`is_deleted` AS `unread` FROM `unread_announcements` WHERE `user_id` = ? and `announcement_id` = ?", userID, announcementID); err != nil && err != sql.ErrNoRows {
 		c.Logger().Error(err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
