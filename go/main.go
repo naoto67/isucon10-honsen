@@ -1551,7 +1551,7 @@ func (h *handlers) GetAnnouncementDetail(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, AnnouncementDetail{
 		ID:         a.ID,
-		CourseID:   a.ID,
+		CourseID:   a.CourseID,
 		CourseName: course.Name,
 		Title:      a.Title,
 		Message:    a.Message,
